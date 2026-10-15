@@ -124,7 +124,21 @@ function startPlayback(c){stopPlayback();selectedStream=c.url;const u=c.url.toLo
    if(window.Hls&&Hls.isSupported()){hlsPlayer=new Hls({enableWorker:true,lowLatencyMode:true});hlsPlayer.loadSource(c.url);hlsPlayer.attachMedia(video);hlsPlayer.on(Hls.Events.ERROR,(_,data)=>{if(data.fatal)showStreamError('Nie udało się odtworzyć transmisji. Źródło może być niedostępne albo blokować odtwarzanie w przeglądarce (CORS).');});}
    else if(video.canPlayType('application/vnd.apple.mpegurl')) video.src=c.url; else throw new Error('Ta przeglądarka nie obsługuje HLS.');
   }else if(/\.ts(?:[?#]|$)/i.test(c.url)||/[?&]extension=ts(?:&|$)/i.test(c.url)){
-   if(window.mpegts&&mpegts.getFeatureList().mseLivePlayback){player=mpegts.createPlayer({type:'mpegts',isLive:true,url:c.url},{enableWorker:true,lazyLoad:true,lazyLoadMaxDuration:60,autoCleanupSourceBuffer:true});player.attachMediaElement(video);player.on(mpegts.Events.ERROR,()=>showStreamError('Błąd strumienia. Serwer może wymagać dostępu z aplikacji, blokować CORS albo używać nieobsługiwanego kodeka.'));player.load();}
+   if(window.mpegts&&mpegts.getFeatureList().mseLivePlayback){player=mpegts.createPlayer({type:'mpegts',isLive:true,url:c.url},{enableWorker:true,lazyLoad:true,lazyLoadMaxDuration:60,autoCleanupSourceBuffer:true});player.attachMediaElement(video);player.on(mpegts.Events.ERROR,(type,detail,info)=>{
+    console.warn('Szymon.TV MPEG-TS error:',{type,detail,httpStatus:info&&info.code});
+    const status=info&&Number(info.code);let msg='Błąd strumienia ('+[type||'nieznany typ',detail||'brak szczegółów'].filter(Boolean).join(' / ')+'). ';
+    if(type===mpegts.ErrorTypes.NETWORK_ERROR){
+     if(detail===mpegts.ErrorDetails.NETWORK_STATUS_CODE_INVALID){msg=status?('Serwer zwrócił HTTP '+status+'. Link może być nieaktualny albo serwer odrzuca dostęp.'):'Serwer odrzucił żądanie HTTP.';}
+     else if(detail===mpegts.ErrorDetails.NETWORK_TIMEOUT){msg='Przekroczono czas oczekiwania na serwer. Sprawdź połączenie lub dostępność źródła.';}
+     else if(detail===mpegts.ErrorDetails.NETWORK_EXCEPTION){msg='Błąd sieci lub CORS. Serwer źródłowy musi zezwalać na odczyt strumienia przez przeglądarkę.';}
+     else msg='Błąd sieci: '+(detail||'nieznany szczegół')+'.';
+    }else if(type===mpegts.ErrorTypes.MEDIA_ERROR){
+     if(detail===mpegts.ErrorDetails.MEDIA_CODEC_UNSUPPORTED)msg='Strumień używa kodeka nieobsługiwanego przez tę przeglądarkę.';
+     else if(detail===mpegts.ErrorDetails.MEDIA_FORMAT_ERROR||detail===mpegts.ErrorDetails.MEDIA_FORMAT_UNSUPPORTED)msg='Odpowiedź serwera nie jest obsługiwanym strumieniem MPEG-TS.';
+     else msg='Błąd dekodowania wideo: '+(detail||'nieznany szczegół')+'.';
+    }else msg+='Sprawdź szczegóły w narzędziach deweloperskich przeglądarki.';
+    showStreamError(msg);
+   });player.load();}
    else throw new Error('Przeglądarka nie obsługuje tego strumienia MPEG-TS.');
   }else{video.src=c.url;}
   const result=video.play();if(result&&result.catch)result.catch(()=>showStreamError('Przeglądarka nie rozpoczęła odtwarzania. Kliknij ▶ w odtwarzaczu lub sprawdź dostęp do źródła.'));
